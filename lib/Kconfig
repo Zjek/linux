@@ -8,6 +8,12 @@ config BINARY_PRINTF
 
 menu "Library routines"
 
+config PTRLIST
+	bool
+	default y
+	help
+	  Use ptrlist lib
+
 config RAID6_PQ
 	tristate
 

@@ -330,3 +330,9 @@ obj-$(CONFIG_GENERIC_LIB_DEVMEM_IS_ALLOWED) += devmem_is_allowed.o
 obj-$(CONFIG_FIRMWARE_TABLE) += fw_table.o
 
 subdir-$(CONFIG_FORTIFY_SOURCE) += test_fortify
+
+#ptrlist library
+# 添加头文件搜索路径
+ccflags-y += -I$(srctree)/include/linux/
+obj-$(CONFIG_PTRLIST) += ptrlist.o
+
