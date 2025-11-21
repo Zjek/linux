@@ -20,55 +20,64 @@
 //   This is fine since phi-nodes make no sense with void values
 //   but VOID is also used for invalid types and in case of errors.
 
+#include <linux/kmemleak.h>
+#include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/ptrlist.h>
 #include <linux/slab.h>
-#include <linux/atomic.h>
 
-static struct kmem_cache *ptrlist_cachep = NULL;
-static atomic_t refcount = ATOMIC_INIT(0);
+static struct kmem_cache *ptrlist_cachep;
+
+///
+// ptrlist node's constructor
+static void ptrlist_node_ctor(void *arg)
+{
+	struct ptr_list *node = arg;
+	memset(node, 0, sizeof(*node));
+}
+///
+// init ptrlist cache pointer
+void ptr_list_init(void)
+{
+	if (ptrlist_cachep != NULL)
+	{
+		return;
+	}
+
+	ptrlist_cachep = kmem_cache_create("ptrlist_cache",
+								sizeof(struct ptr_list),
+								0,
+								SLAB_PANIC | SLAB_RECLAIM_ACCOUNT | SLAB_HWCACHE_ALIGN,
+							ptrlist_node_ctor);	
+}
+EXPORT_SYMBOL_GPL(ptr_list_init);
+
+///
+// alloc a ptrlist node
+// @return: the ptrlist node or null(alloc failed).
 static inline void *__alloc_ptrlist(void)
 {
+	if (ptrlist_cachep == NULL)
+	{
+		pr_warn("The cache pointer is null. Please call ptr_list_init first!");
+		return NULL;
+	}
 	struct ptrlist *obj = NULL;
-	if(!ptrlist_cachep)
-	{
-		ptrlist_cachep = kmem_cache_create("ptrlist_cache",
-									sizeof(struct ptr_list),
-									0,
-									SLAB_HWCACHE_ALIGN,
-									NULL);	
-
-		if(!ptrlist_cachep)
-		{
-			printk(KERN_ERR "Failed to create kmem_cache\n");
-			return NULL;
-		}
-		printk(KERN_INFO "Created ptrlist_cachep,initial refcount: %d\n", atomic_read(&refcount));
-	}
-
 	obj = kmem_cache_alloc(ptrlist_cachep, GFP_KERNEL);
-	if(obj)
+	if(!obj)
 	{
-		atomic_inc(&refcount);
-		printk(KERN_INFO "alloc refcount: %d\n", atomic_read(&refcount));
+		pr_warn("kmem_cache_alloc failed!");
 	}
-
 	return obj;	
 }
 
+///
+// free a ptrlist node
+// @ptr: the ptrlist node pointer.
 static inline void __free_ptrlist(void *ptr)
 {
 	if (ptr == NULL) return;
 	kmem_cache_free(ptrlist_cachep, ptr);
-	printk(KERN_INFO "kmem_cache free\n");
-	printk(KERN_INFO "free refcount: %d\n", atomic_read(&refcount));
-	atomic_dec(&refcount);
-	if(atomic_read(&refcount) == 0)
-	{
-		printk(KERN_INFO "kmem_cache destroy refcount:%d\n", atomic_read(&refcount));
-		//kmem_cache_destroy(ptrlist_cachep);
-		//ptrlist_cachep = NULL;	
-	}
 }
 
 ///
@@ -347,8 +356,11 @@ EXPORT_SYMBOL_GPL(__add_ptr_list);
 void **__add_ptr_list_tag(struct ptr_list **listp, void *ptr, unsigned long tag)
 {
 	/* The low two bits are reserved for tags */
-	//assert((3 & (unsigned long)ptr) == 0);
-	//assert((~3 & tag) == 0);
+	if (((3 & (unsigned long)ptr) != 0) || ((~3 & tag) != 0))
+	{
+		pr_warn("The low two bits are reserved for tags");
+		return NULL;
+	}
 
 	ptr = (void *)(tag | (unsigned long)ptr);
 
@@ -394,7 +406,10 @@ int delete_ptr_list_entry(struct ptr_list **list, void *entry, int count)
 				goto out;
 		}
 	} END_FOR_EACH_PTR(ptr);
-	//assert(count <= 0);
+	if(count > 0)
+	{
+		pr_warn("The parameter entry or count error");
+	}
 out:
 	pack_ptr_list(list);
 	return count;
@@ -419,7 +434,10 @@ int replace_ptr_list_entry(struct ptr_list **list, void *old_ptr,
 				goto out;
 		}
 	}END_FOR_EACH_PTR(ptr);
-	//assert(count <= 0);
+	if(count > 0)
+	{
+		pr_warn("The parameter entry or count error");
+	}
 out:
 	return count;
 }
